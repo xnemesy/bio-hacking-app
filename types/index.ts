@@ -24,19 +24,19 @@ export type Porzione = 'pesato' | 'stimato' | 'non_rispettato';
 
 // ─── Tabella: giorni ─────────────────────────────────────────────────────────
 
-export interface Giorno {
+export type Giorno = {
   id: UUID;
   data: ISODate;
   note: string | null;
   created_at: ISOTimestamp;
-}
+};
 
 // Payload per INSERT — i campi generati/auto non si inviano
 export type GiornoInsert = Pick<Giorno, 'data'> & Partial<Pick<Giorno, 'note'>>;
 
 // ─── Tabella: pasti ──────────────────────────────────────────────────────────
 
-export interface Pasto {
+export type Pasto = {
   id: UUID;
   giorno_id: UUID;
   tipo_pasto: TipoPasto;
@@ -53,7 +53,7 @@ export interface Pasto {
   fame_emotiva: boolean;
   note: string | null;
   created_at: ISOTimestamp;
-}
+};
 
 export type PastoInsert = Pick<
   Pasto,
@@ -63,7 +63,7 @@ export type PastoInsert = Pick<
 
 // ─── Tabella: sessioni ────────────────────────────────────────────────────────
 
-export interface Sessione {
+export type Sessione = {
   id: UUID;
   giorno_id: UUID;
   tipo: TipoSessione;
@@ -77,7 +77,7 @@ export interface Sessione {
   idratazione_pre: boolean;
   spuntino_pre: boolean;
   created_at: ISOTimestamp;
-}
+};
 
 export type SessioneInsert = Pick<Sessione, 'giorno_id' | 'tipo'> &
   Partial<Pick<
@@ -94,7 +94,7 @@ export type SessioneInsert = Pick<Sessione, 'giorno_id' | 'tipo'> &
 
 // ─── Tabella: esercizi_log ────────────────────────────────────────────────────
 
-export interface EsercizioLog {
+export type EsercizioLog = {
   id: UUID;
   sessione_id: UUID;
   nome_esercizio: string;
@@ -109,7 +109,7 @@ export interface EsercizioLog {
   superset_label: string | null;
   ordine: number;
   created_at: ISOTimestamp;
-}
+};
 
 export type EsercizioLogInsert = Pick<
   EsercizioLog,
@@ -126,26 +126,36 @@ export interface Database {
         Row: Giorno;
         Insert: GiornoInsert;
         Update: Partial<GiornoInsert>;
+        Relationships: [];
       };
       pasti: {
         Row: Pasto;
         Insert: PastoInsert;
         Update: Partial<PastoInsert>;
+        Relationships: [];
       };
       sessioni: {
         Row: Sessione;
         Insert: SessioneInsert;
         Update: Partial<SessioneInsert>;
+        Relationships: [];
       };
       esercizi_log: {
         Row: EsercizioLog;
         Insert: EsercizioLogInsert;
         Update: Partial<EsercizioLogInsert>;
+        Relationships: [];
       };
     };
-    Views: Record<string, never>;
-    Functions: Record<string, never>;
-    Enums: Record<string, never>;
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
   };
 }
 
