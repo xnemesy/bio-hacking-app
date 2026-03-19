@@ -1,5 +1,5 @@
 // Funzioni di business logic per calcoli nutrizionali e di allenamento
-import type { StatoGiorno } from '../types/index';
+import type { StatoGiorno, Ingrediente, MacroTotali } from '../types/index';
 
 /** Calorie di un pasto: P*4 + C*4 + G*9 */
 export function caloriePasto(
@@ -59,4 +59,32 @@ export function statoGiorno(bilancio: number, acquaMl: number): StatoGiorno {
 export function calorieConsumate(durataMin: number, cardioMin: number): number {
   const minForza = Math.max(0, durataMin - cardioMin);
   return Math.round(minForza * 7 + cardioMin * 10);
+}
+
+/** Calcola macro di un ingrediente per la quantità specificata */
+export function macroIngrediente(
+  per100: { proteine: number; carboidrati: number; grassi: number },
+  grammi: number
+): { proteine: number; carboidrati: number; grassi: number; kcal: number } {
+  const ratio = grammi / 100;
+  const p = +(per100.proteine * ratio).toFixed(1);
+  const c = +(per100.carboidrati * ratio).toFixed(1);
+  const g = +(per100.grassi * ratio).toFixed(1);
+  return { proteine: p, carboidrati: c, grassi: g, kcal: Math.round(p * 4 + c * 4 + g * 9) };
+}
+
+/** Somma tutti gli ingredienti → totali da salvare su pasti */
+export function sommaIngredienti(ingredienti: Ingrediente[]): MacroTotali {
+  return ingredienti.reduce(
+    (acc, ing) => {
+      const m = macroIngrediente(ing.per100, ing.grammi);
+      return {
+        proteine_g: +(acc.proteine_g + m.proteine).toFixed(1),
+        carboidrati_g: +(acc.carboidrati_g + m.carboidrati).toFixed(1),
+        grassi_g: +(acc.grassi_g + m.grassi).toFixed(1),
+        kcal: acc.kcal + m.kcal,
+      };
+    },
+    { proteine_g: 0, carboidrati_g: 0, grassi_g: 0, kcal: 0 }
+  );
 }

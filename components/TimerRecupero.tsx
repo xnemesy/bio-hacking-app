@@ -1,57 +1,13 @@
-// Timer recupero 60 secondi con haptic feedback e notifica background
+// Timer recupero 60 secondi con haptic feedback visivo
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
 
 const DURATA_SEC = 60;
-const NOTIF_ID_KEY = 'timer-recupero';
-
-// Configura come le notifiche vengono mostrate quando l'app è in foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
-/** Schedula una notifica locale dopo `secondi` secondi */
-async function schedulaNotifica(secondi: number): Promise<string | null> {
-  try {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') return null;
-
-    const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '⏱️ Recupero terminato!',
-        body: 'Inizia il prossimo superset 💪',
-        sound: true,
-      },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secondi },
-    });
-    return id;
-  } catch {
-    return null;
-  }
-}
-
-async function cancellaNotifica(id: string | null): Promise<void> {
-  if (id) {
-    try {
-      await Notifications.cancelScheduledNotificationAsync(id);
-    } catch {
-      // ignora errori di cancellazione
-    }
-  }
-}
 
 export default function TimerRecupero(): React.JSX.Element {
   const [secondsLeft, setSecondsLeft] = useState(DURATA_SEC);
   const [isRunning, setIsRunning] = useState(false);
-  const notifIdRef = useRef<string | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Effetto pulse quando il timer è attivo
@@ -80,8 +36,6 @@ export default function TimerRecupero(): React.JSX.Element {
   useEffect(() => {
     if (isRunning && secondsLeft === 0) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      void cancellaNotifica(notifIdRef.current);
-      notifIdRef.current = null;
       setIsRunning(false);
       setSecondsLeft(DURATA_SEC); // auto-reset
     }
@@ -91,14 +45,12 @@ export default function TimerRecupero(): React.JSX.Element {
     setSecondsLeft(DURATA_SEC);
     setIsRunning(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    notifIdRef.current = await schedulaNotifica(DURATA_SEC);
   }, []);
 
   const annulla = useCallback(async () => {
     setIsRunning(false);
     setSecondsLeft(DURATA_SEC);
-    await cancellaNotifica(notifIdRef.current);
-    notifIdRef.current = null;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
   // Colore in base al tempo rimasto

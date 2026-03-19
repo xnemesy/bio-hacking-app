@@ -10,6 +10,7 @@ import type {
   GiornoLettera,
   UUID,
 } from '../types/index';
+import type { LastCarichi } from '../store/lastSessionStore';
 
 // ─── Tipi locali ─────────────────────────────────────────────────────────────
 
@@ -39,9 +40,11 @@ export interface UseSessioneReturn {
   salvando: boolean;
   error: string | null;
   aggiorna: (giornoId: UUID) => Promise<void>;
-  iniziaSessione: (lettera: GiornoLettera, giornoId: UUID) => Promise<void>;
+  iniziaSessione: (lettera: GiornoLettera, giornoId: UUID, lastCarichi?: LastCarichi) => Promise<void>;
   aggiornaCarico: (id: UUID, caricoA: number, caricoB: number) => Promise<void>;
   completaSessione: (meta: CompletaSessioneMeta) => Promise<void>;
+  eliminaEsercizio: (id: UUID) => Promise<void>;
+  duplicaEsercizio: (esercizio: EsercizioLog) => Promise<void>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -91,7 +94,7 @@ export function useSessione(): UseSessioneReturn {
         .limit(1);
       if (errS) throw new Error(errS.message);
 
-      const sessioneCorrente = sessioni?.[0] ?? null;
+      const sessioneCorrente = (sessioni as Sessione[])?.[0] ?? null;
       setSessione(sessioneCorrente);
 
       if (sessioneCorrente) {
@@ -101,7 +104,7 @@ export function useSessione(): UseSessioneReturn {
           .eq('sessione_id', sessioneCorrente.id)
           .order('ordine');
         if (errL) throw new Error(errL.message);
-        setEsercizi(log ?? []);
+        setEsercizi((log as EsercizioLog[]) ?? []);
       } else {
         setEsercizi([]);
       }
@@ -117,7 +120,7 @@ export function useSessione(): UseSessioneReturn {
    * Se esiste già una sessione, la elimina (con conferma gestita dalla UI).
    */
   const iniziaSessione = useCallback(
-    async (lettera: GiornoLettera, giornoId: UUID) => {
+    async (lettera: GiornoLettera, giornoId: UUID, lastCarichi?: LastCarichi) => {
       setSalvando(true);
       setError(null);
       try {
@@ -125,7 +128,7 @@ export function useSessione(): UseSessioneReturn {
         const tipoDb = lettera === 'riposo' ? 'altro' : 'forza';
 
         // Crea la sessione
-        const { data: nuovaSessione, error: errIns } = await supabase
+        const { data: nuovaSessioneData, error: errIns } = await supabase
           .from('sessioni')
           .insert({
             giorno_id: giornoId,
@@ -135,6 +138,7 @@ export function useSessione(): UseSessioneReturn {
           .select()
           .single();
         if (errIns) throw new Error(errIns.message);
+        const nuovaSessione = nuovaSessioneData as Sessione;
         setSessione(nuovaSessione);
 
         // Nessun esercizio per i giorni di riposo
@@ -149,13 +153,14 @@ export function useSessione(): UseSessioneReturn {
 
         for (const gruppo of preset.gruppi) {
           for (const e of gruppo.esercizi) {
+            const prevCarico = lastCarichi?.[e.nome];
             rows.push({
               sessione_id: nuovaSessione.id,
               nome_esercizio: e.nome,
               serie: e.serie,
               reps: e.reps,
-              carico_a_kg: 0,
-              carico_b_kg: 0,
+              carico_a_kg: prevCarico?.carico_a_kg ?? 0,
+              carico_b_kg: prevCarico?.carico_b_kg ?? 0,
               superset_label: gruppo.label,
               ordine: ordine++,
             });
@@ -168,7 +173,7 @@ export function useSessione(): UseSessioneReturn {
           .insert(rows)
           .select();
         if (errLog) throw new Error(errLog.message);
-        setEsercizi(logInseriti ?? []);
+        setEsercizi((logInseriti as EsercizioLog[]) ?? []);
       } catch (e) {
         setError((e as Error).message);
         throw e;
@@ -238,6 +243,45 @@ export function useSessione(): UseSessioneReturn {
     [sessione]
   );
 
+  const eliminaEsercizio = useCallback(
+    async (id: UUID) => {
+      setError(null);
+      try {
+        const { error: err } = await supabase.from('esercizi_log').delete().eq('id', id);
+        if (err) throw new Error(err.message);
+        setEsercizi((prev) => prev.filter((e) => e.id !== id));
+      } catch (e) {
+        setError((e as Error).message);
+        throw e;
+      }
+    },
+    []
+  );
+
+  const duplicaEsercizio = useCallback(
+    async (esercizio: EsercizioLog) => {
+      setSalvando(true);
+      setError(null);
+      try {
+        const { id, created_at, volume_kg, ...rest } = esercizio;
+        const dati: EsercizioLogInsert = {
+          ...rest,
+          note: esercizio.note ? `[Duplicato] ${esercizio.note}` : '[Duplicato]',
+          ordine: esercizi.length > 0 ? Math.max(...esercizi.map(e => e.ordine)) + 1 : 0,
+        };
+        const { data, error: err } = await supabase.from('esercizi_log').insert(dati).select().single();
+        if (err) throw new Error(err.message);
+        setEsercizi((prev) => [...prev, data as EsercizioLog]);
+      } catch (e) {
+        setError((e as Error).message);
+        throw e;
+      } finally {
+        setSalvando(false);
+      }
+    },
+    [esercizi]
+  );
+
   const gruppi = raggruppaEsercizi(esercizi);
   const volumeTotale = calcolaVolumeTotale(esercizi);
 
@@ -253,5 +297,7 @@ export function useSessione(): UseSessioneReturn {
     iniziaSessione,
     aggiornaCarico,
     completaSessione,
+    eliminaEsercizio,
+    duplicaEsercizio,
   };
 }

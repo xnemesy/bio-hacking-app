@@ -2,9 +2,10 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { caloriePasto, calorieConsumate } from '../lib/calcoli';
+import { useProfiloStore } from '../store/profiloStore';
 import type { Giorno, Pasto, Sessione, TotaliGiorno } from '../types/index';
 
-const BMR = 1650;
+const BMR_DEFAULT = 1650;
 
 /** Data odierna in formato YYYY-MM-DD locale */
 function dataOggi(): string {
@@ -49,6 +50,9 @@ export interface UseGiornoReturn {
 }
 
 export function useGiorno(): UseGiornoReturn {
+  const bmrDaProfilo = useProfiloStore((state) => state.profilo?.bmr);
+  const BMR = bmrDaProfilo ?? BMR_DEFAULT;
+
   const [giorno, setGiorno] = useState<Giorno | null>(null);
   const [pasti, setPasti] = useState<Pasto[]>([]);
   const [sessione, setSessione] = useState<Sessione | null>(null);
@@ -81,7 +85,7 @@ export function useGiorno(): UseGiornoReturn {
       let giornoCorrente: Giorno;
 
       if (esistente) {
-        giornoCorrente = esistente;
+        giornoCorrente = esistente as Giorno;
       } else {
         // Crea il giorno se non esiste
         const { data: nuovo, error: errInsert } = await supabase
@@ -90,7 +94,7 @@ export function useGiorno(): UseGiornoReturn {
           .select()
           .single();
         if (errInsert) throw new Error(errInsert.message);
-        giornoCorrente = nuovo;
+        giornoCorrente = nuovo as Giorno;
       }
 
       // Carica pasti e prima sessione in parallelo
@@ -110,8 +114,8 @@ export function useGiorno(): UseGiornoReturn {
       if (resPasti.error) throw new Error(resPasti.error.message);
       if (resSessioni.error) throw new Error(resSessioni.error.message);
 
-      const pastiCaricati = resPasti.data ?? [];
-      const sessioneCaricata = resSessioni.data?.[0] ?? null;
+      const pastiCaricati = (resPasti.data as Pasto[]) ?? [];
+      const sessioneCaricata = (resSessioni.data as Sessione[])?.[0] ?? null;
 
       setGiorno(giornoCorrente);
       setPasti(pastiCaricati);
@@ -127,7 +131,7 @@ export function useGiorno(): UseGiornoReturn {
   // Calorie consumate dalla sessione (0 se nessuna sessione)
   const calConsumate =
     sessione !== null
-      ? calorieConsumate(sessione.durata_min ?? 0, sessione.tipo === 'cardio' ? (sessione.durata_min ?? 0) : 0)
+      ? calorieConsumate(sessione.durata_min ?? 0, sessione.cardio_extra_min)
       : 0;
 
   return { giorno, pasti, sessione, totali, calConsumate, bmr: BMR, loading, error, aggiorna };

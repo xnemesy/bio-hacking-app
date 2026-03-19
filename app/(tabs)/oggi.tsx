@@ -1,5 +1,5 @@
 // Schermata principale: riepilogo giornaliero
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import {
   ScrollView,
   View,
@@ -9,12 +9,18 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { BottomSheetModal } from '@gorhom/bottom-sheet';
+
 import StatoBadge from '../../components/StatoBadge';
 import CalorieCard from '../../components/CalorieCard';
 import AcquaCard from '../../components/AcquaCard';
+import QuickActionsBar from '../../components/QuickActionsBar';
+import QuickAddPastoSheet from '../../components/QuickAddPastoSheet';
 import { useGiorno } from '../../hooks/useGiorno';
 import { bilancioGiornaliero } from '../../lib/calcoli';
+import { supabase } from '../../lib/supabase';
+import type { PastoInsert } from '../../types/index';
 
 /** Formatta data in italiano: "Martedì 11 Marzo 2026" */
 function formattaData(isoDate: string): string {
@@ -50,17 +56,42 @@ function MacroChip({ label, valore, colore }: MacroChipProps): React.JSX.Element
 }
 
 export default function OggiScreen(): React.JSX.Element {
+  const navigation = useNavigation<any>();
+  const bottomSheetModalRef = useRef<BottomSheetModal>(null);
+
   const { giorno, totali, sessione, calConsumate, bmr, loading, error, aggiorna } =
     useGiorno();
 
   // Ricarica ogni volta che il tab torna in foreground
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       void aggiorna();
     }, [aggiorna])
   );
 
   const bilancio = bilancioGiornaliero(totali.calorie_totali, calConsumate, bmr);
+
+  const handleOpenPastoSheet = useCallback(() => {
+    bottomSheetModalRef.current?.present();
+  }, []);
+
+  const handleSalvaPasto = useCallback(async (dati: PastoInsert) => {
+    if (!giorno) return;
+    const { error } = await supabase.from('pasti').insert({
+      ...dati,
+      giorno_id: giorno.id,
+    });
+    if (error) {
+       console.error("Errore salvataggio pasto da quick add", error);
+       throw error;
+    }
+    // Ricaricamento dei dati della pagina
+    await aggiorna();
+  }, [giorno, aggiorna]);
+
+  const handleNavigateToFullPasto = useCallback((datiDaModale: Partial<PastoInsert>) => {
+     navigation.navigate('Pasti', { quickAdd: 'true', ...datiDaModale });
+  }, [navigation]);
 
   if (loading && !giorno) {
     return (
@@ -96,6 +127,20 @@ export default function OggiScreen(): React.JSX.Element {
           <StatoBadge bilancio={bilancio} acquaMl={totali.acqua_totale} />
         </View>
 
+        {/* Quick Actions Bar */}
+        {giorno && (
+          <View style={styles.quickActionsContainer}>
+            <QuickActionsBar
+              giornoId={giorno.id}
+              data={giorno.data}
+              sessione={sessione}
+              omega3={totali.omega3_preso}
+              onRefresh={aggiorna}
+              onOpenPasto={handleOpenPastoSheet}
+            />
+          </View>
+        )}
+
         {/* Calorie */}
         <CalorieCard
           calIngerite={totali.calorie_totali}
@@ -112,7 +157,11 @@ export default function OggiScreen(): React.JSX.Element {
           {sessione !== null ? (
             <View style={styles.cardContenuto}>
               <Text style={styles.cardValore}>
-                {TIPO_LABEL[sessione.tipo] ?? '⚡ Sessione'}
+                {sessione.giorno_lettera === 'riposo'
+                  ? '🧘 Giorno di riposo'
+                  : sessione.giorno_lettera !== null
+                  ? `💪 Giorno ${sessione.giorno_lettera}`
+                  : TIPO_LABEL[sessione.tipo] ?? '⚡ Sessione'}
               </Text>
               {sessione.durata_min !== null && (
                 <Text style={styles.cardSottotitolo}>
@@ -145,6 +194,17 @@ export default function OggiScreen(): React.JSX.Element {
           </View>
         </View>
       </ScrollView>
+
+      {/* Quick Add Pasto Bottom Sheet */}
+      {giorno && (
+        <QuickAddPastoSheet
+          bottomSheetModalRef={bottomSheetModalRef}
+          giornoId={giorno.id}
+          data={giorno.data}
+          onSalva={handleSalvaPasto}
+          onNavigateToFull={handleNavigateToFullPasto}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -154,6 +214,11 @@ const styles = StyleSheet.create({
   loader: { flex: 1 },
   scroll: { padding: 16, gap: 12 },
   header: { gap: 10, marginBottom: 4 },
+  quickActionsContainer: {
+    marginHorizontal: -16, // per far andare la scrollview orizzontale full-width  
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
   dataLabel: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', textTransform: 'capitalize' },
   card: { backgroundColor: '#242424', borderRadius: 16, padding: 16, gap: 8 },
   cardTitolo: {

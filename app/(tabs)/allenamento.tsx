@@ -1,5 +1,5 @@
 // Schermata allenamento: gestione sessioni A/B/C con preset e timer recupero
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   ScrollView,
   View,
@@ -18,9 +18,12 @@ import SupersetCard from '../../components/SupersetCard';
 import TimerRecupero from '../../components/TimerRecupero';
 import { useGiorno } from '../../hooks/useGiorno';
 import { useSessione } from '../../hooks/useSessione';
+import { useLastSession } from '../../hooks/useLastSession';
+import { useLastSessionStore } from '../../store/lastSessionStore';
 import type { CompletaSessioneMeta, GruppoEsercizi } from '../../hooks/useSessione';
+import type { LastCarichi } from '../../store/lastSessionStore';
 import { GIORNI_PRESET } from '../../data/esercizi';
-import type { GiornoLettera, Sessione } from '../../types/index';
+import type { GiornoLettera, Sessione, EsercizioLog } from '../../types/index';
 
 const GIORNO_LABELS: Record<Exclude<GiornoLettera, 'riposo'>, string> = {
   A: '🏋️ Giorno A',
@@ -34,12 +37,18 @@ const GIORNO_DESCR: Record<Exclude<GiornoLettera, 'riposo'>, string> = {
   C: GIORNI_PRESET.C.titolo,
 };
 
+function formatDataIta(isoDate: string): string {
+  const parts = isoDate.split('-');
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
 // ─── Schermata principale ────────────────────────────────────────────────────
 
 export default function AllenamentoScreen(): React.JSX.Element {
   const { giorno, loading: loadingGiorno, aggiorna: aggiornaGiorno } = useGiorno();
   const {
     sessione,
+    esercizi,
     gruppi,
     volumeTotale,
     loading,
@@ -49,20 +58,73 @@ export default function AllenamentoScreen(): React.JSX.Element {
     iniziaSessione,
     aggiornaCarico,
     completaSessione,
+    eliminaEsercizio,
+    duplicaEsercizio,
   } = useSessione();
 
-  // Ricarica al focus del tab
+  const { setLastSession, invalidate } = useLastSessionStore();
+
+  // Selezione giorno prima di iniziare la sessione (stato alzato qui per useLastSession)
+  const [selezione, setSelezione] = useState<GiornoLettera | null>(null);
+
+  // Giorno attivo: dalla sessione esistente o dalla selezione corrente
+  const letteraAttiva: 'A' | 'B' | 'C' | null = (() => {
+    const letSession = sessione?.giorno_lettera;
+    if (letSession && letSession !== 'riposo') return letSession as 'A' | 'B' | 'C';
+    if (selezione && selezione !== 'riposo') return selezione as 'A' | 'B' | 'C';
+    return null;
+  })();
+
+  const { lastCarichi, lastDate, found } = useLastSession(letteraAttiva);
+
+  const giornoId = giorno?.id;
+
   useFocusEffect(
     useCallback(() => {
-      void aggiornaGiorno().then(() => {
-        if (giorno) void aggiorna(giorno.id);
-      });
-    }, [aggiornaGiorno, aggiorna, giorno])
+      void aggiornaGiorno();
+      if (giornoId) void aggiorna(giornoId);
+    }, [aggiornaGiorno, aggiorna, giornoId])
   );
 
+  useEffect(() => {
+    if (giornoId) void aggiorna(giornoId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [giornoId]);
+
   const handleAggiorna = useCallback(() => {
-    if (giorno) void aggiorna(giorno.id);
-  }, [aggiorna, giorno]);
+    if (giornoId) void aggiorna(giornoId);
+  }, [aggiorna, giornoId]);
+
+  // Wrappa iniziaSessione per passare i carichi pre-compilati
+  const handleIniziaSessione = useCallback(
+    async (lettera: GiornoLettera, gId: string): Promise<void> => {
+      const carichi = lettera !== 'riposo' ? lastCarichi : undefined;
+      await iniziaSessione(lettera, gId, carichi);
+    },
+    [iniziaSessione, lastCarichi]
+  );
+
+  // Wrappa completaSessione per aggiornare la cache dopo il salvataggio
+  const handleCompletaSessione = useCallback(
+    async (meta: CompletaSessioneMeta): Promise<void> => {
+      await completaSessione(meta);
+      if (sessione?.giorno_lettera && sessione.giorno_lettera !== 'riposo') {
+        const lettera = sessione.giorno_lettera as 'A' | 'B' | 'C';
+        const oggi = new Date().toISOString().split('T')[0] ?? '';
+        const nuoviCarichi: LastCarichi = {};
+        for (const e of esercizi) {
+          nuoviCarichi[e.nome_esercizio] = {
+            carico_a_kg: e.carico_a_kg,
+            carico_b_kg: e.carico_b_kg,
+          };
+        }
+        // Invalida la cache e aggiorna con i nuovi carichi
+        invalidate(lettera);
+        setLastSession(lettera, nuoviCarichi, oggi);
+      }
+    },
+    [completaSessione, sessione, esercizi, invalidate, setLastSession]
+  );
 
   if (loadingGiorno || (loading && !sessione)) {
     return (
@@ -79,7 +141,11 @@ export default function AllenamentoScreen(): React.JSX.Element {
         <IniziaSessioneView
           giornoId={giorno?.id ?? null}
           salvando={salvando}
-          onIniziaSessione={iniziaSessione}
+          selezione={selezione}
+          onSelezione={setSelezione}
+          lastDate={lastDate}
+          found={found}
+          onIniziaSessione={handleIniziaSessione}
         />
       </SafeAreaView>
     );
@@ -106,8 +172,13 @@ export default function AllenamentoScreen(): React.JSX.Element {
         sessione={sessione}
         salvando={salvando}
         error={error}
+        lastCarichi={lastCarichi}
+        lastDate={lastDate}
+        found={found}
         onUpdateCarico={aggiornaCarico}
-        onCompleta={completaSessione}
+        onDeleteEsercizio={eliminaEsercizio}
+        onDuplicaEsercizio={duplicaEsercizio}
+        onCompleta={handleCompletaSessione}
         onRefresh={handleAggiorna}
       />
     </SafeAreaView>
@@ -119,12 +190,22 @@ export default function AllenamentoScreen(): React.JSX.Element {
 interface IniziaSessioneViewProps {
   giornoId: string | null;
   salvando: boolean;
+  selezione: GiornoLettera | null;
+  onSelezione: (lettera: GiornoLettera | null) => void;
+  lastDate: string | null;
+  found: boolean;
   onIniziaSessione: (lettera: GiornoLettera, giornoId: string) => Promise<void>;
 }
 
-function IniziaSessioneView({ giornoId, salvando, onIniziaSessione }: IniziaSessioneViewProps): React.JSX.Element {
-  const [selezione, setSelezione] = useState<GiornoLettera | null>(null);
-
+function IniziaSessioneView({
+  giornoId,
+  salvando,
+  selezione,
+  onSelezione,
+  lastDate,
+  found,
+  onIniziaSessione,
+}: IniziaSessioneViewProps): React.JSX.Element {
   const handleAvvia = (): void => {
     if (!selezione || !giornoId) return;
     void (async () => {
@@ -143,7 +224,7 @@ function IniziaSessioneView({ giornoId, salvando, onIniziaSessione }: IniziaSess
           <TouchableOpacity
             key={l}
             style={[styles.giornoCard, selezione === l && styles.giornoCardAttivo]}
-            onPress={() => setSelezione(l)}
+            onPress={() => onSelezione(l)}
             activeOpacity={0.8}
           >
             <Text style={[styles.giornoLettera, selezione === l && styles.giornoLetteraAttiva]}>
@@ -156,7 +237,7 @@ function IniziaSessioneView({ giornoId, salvando, onIniziaSessione }: IniziaSess
               {GIORNO_DESCR[l]}
             </Text>
             <Text style={styles.giornoInfo}>
-              {GIORNI_PRESET[l].gruppi.length} superset
+              {GIORNI_PRESET[l].gruppi.length} gruppi
             </Text>
           </TouchableOpacity>
         ))}
@@ -165,10 +246,21 @@ function IniziaSessioneView({ giornoId, salvando, onIniziaSessione }: IniziaSess
       {/* Riposo */}
       <TouchableOpacity
         style={[styles.riposoBtn, selezione === 'riposo' && styles.riposaoBtnAttivo]}
-        onPress={() => setSelezione('riposo')}
+        onPress={() => onSelezione('riposo')}
       >
         <Text style={styles.riposoBtnTesto}>🧘 Giorno di riposo</Text>
       </TouchableOpacity>
+
+      {/* Banner info ultima sessione (solo se selezione A/B/C) */}
+      {selezione !== null && selezione !== 'riposo' && (
+        <View style={styles.bannerInfo}>
+          <Text style={styles.bannerTesto}>
+            {found && lastDate != null
+              ? `📋 Carichi pre-compilati dalla sessione del ${formatDataIta(lastDate)}`
+              : `🆕 Prima sessione Giorno ${selezione} — inserisci i carichi`}
+          </Text>
+        </View>
+      )}
 
       {/* Avvia */}
       <TouchableOpacity
@@ -208,7 +300,12 @@ interface AllenamentoViewProps {
   sessione: Sessione;
   salvando: boolean;
   error: string | null;
+  lastCarichi: LastCarichi;
+  lastDate: string | null;
+  found: boolean;
   onUpdateCarico: (id: string, caricoA: number, caricoB: number) => Promise<void>;
+  onDeleteEsercizio: (id: string) => Promise<void>;
+  onDuplicaEsercizio: (esercizio: EsercizioLog) => Promise<void>;
   onCompleta: (meta: CompletaSessioneMeta) => Promise<void>;
   onRefresh: () => void;
 }
@@ -220,7 +317,12 @@ function AllenamentoView({
   sessione,
   salvando,
   error,
+  lastCarichi,
+  lastDate,
+  found,
   onUpdateCarico,
+  onDeleteEsercizio,
+  onDuplicaEsercizio,
   onCompleta,
   onRefresh,
 }: AllenamentoViewProps): React.JSX.Element {
@@ -231,9 +333,8 @@ function AllenamentoView({
     sessione.durata_min !== null ? String(sessione.durata_min) : ''
   );
   const [rpe, setRpe] = useState<number | null>(sessione.rpe);
-  const [cardioExtra, setCardioExtra] = useState(
-    String(sessione.cardio_extra_min > 0 ? sessione.cardio_extra_min : 15)
-  );
+  const defaultCardio = sessione.cardio_extra_min > 0 ? sessione.cardio_extra_min : lettera === 'B' ? 15 : 0;
+  const [cardioExtra, setCardioExtra] = useState(String(defaultCardio));
   const [addome, setAddome] = useState(sessione.addome_completato);
   const [idratazione, setIdratazione] = useState(sessione.idratazione_pre);
   const [spuntino, setSpuntino] = useState(sessione.spuntino_pre);
@@ -274,6 +375,15 @@ function AllenamentoView({
         </View>
       </View>
 
+      {/* Banner carichi pre-compilati */}
+      <View style={styles.bannerInfo}>
+        <Text style={styles.bannerTesto}>
+          {found && lastDate != null
+            ? `📋 Carichi pre-compilati dalla sessione del ${formatDataIta(lastDate)}`
+            : `🆕 Prima sessione Giorno ${lettera} — inserisci i carichi`}
+        </Text>
+      </View>
+
       {error !== null && (
         <Text style={styles.errore}>⚠️ {error}</Text>
       )}
@@ -284,7 +394,10 @@ function AllenamentoView({
           <SupersetCard
             gruppo={gruppo}
             indice={idx}
+            lastCarichi={lastCarichi}
             onUpdateCarico={onUpdateCarico}
+            onDeleteEsercizio={onDeleteEsercizio}
+            onDuplicaEsercizio={onDuplicaEsercizio}
           />
           {idx < gruppi.length - 1 && <TimerRecupero />}
         </React.Fragment>
@@ -465,6 +578,21 @@ const styles = StyleSheet.create({
   },
   avviaBtnDisabilitato: { backgroundColor: '#2A2A2A' },
   avviaBtnTesto: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
+
+  // Banner info
+  bannerInfo: {
+    backgroundColor: '#1E2A1E',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#2A3A2A',
+  },
+  bannerTesto: {
+    fontSize: 13,
+    color: '#8DB882',
+    fontWeight: '500',
+  },
 
   // Riposo
   riposoView: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },

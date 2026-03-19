@@ -12,7 +12,8 @@ export type TipoPasto =
   | 'spuntino_2_am'
   | 'pranzo'
   | 'spuntino_3_pm'
-  | 'cena';
+  | 'cena'
+  | 'Extra';
 
 export type TipoSessione = 'forza' | 'cardio' | 'mobilita' | 'altro';
 
@@ -117,6 +118,27 @@ export type EsercizioLogInsert = Pick<
 > &
   Partial<Pick<EsercizioLog, 'note' | 'superset_label' | 'ordine'>>;
 
+// ─── Tabella: profilo ─────────────────────────────────────────────────────────
+
+export type Profilo = {
+  id: UUID;
+  user_id: UUID;
+  nome: string | null;
+  peso_kg: number | null;
+  altezza_cm: number | null;
+  eta: number | null;
+  fm_attuale: number | null;
+  fm_target: number | null;
+  bmr: number;
+  obiettivo_acqua_ml: number;
+  nutrizionista: string | null;
+  palestra: string | null;
+  data_ultima_bia: ISODate | null;
+  updated_at: ISOTimestamp;
+};
+
+export type ProfiloUpdate = Partial<Omit<Profilo, 'id' | 'user_id' | 'updated_at'>>;
+
 // ─── Tipo Database per il client Supabase tipizzato ──────────────────────────
 
 export interface Database {
@@ -146,17 +168,73 @@ export interface Database {
         Update: Partial<EsercizioLogInsert>;
         Relationships: [];
       };
+      profilo: {
+        Row: Profilo;
+        Insert: ProfiloUpdate & { user_id: UUID };
+        Update: ProfiloUpdate;
+        Relationships: [];
+      };
+      pasti_template: {
+        Row: PastoTemplate;
+        Insert: Omit<PastoTemplate, 'id' | 'calorie' | 'attivo'> & Partial<Pick<PastoTemplate, 'attivo'>>;
+        Update: Partial<Omit<PastoTemplate, 'id' | 'calorie'>>;
+        Relationships: [];
+      };
     };
-    Views: {
-      [_ in never]: never;
-    };
-    Functions: {
-      [_ in never]: never;
-    };
-    Enums: {
-      [_ in never]: never;
-    };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
+}
+
+// ─── Tabella: pasti_template ─────────────────────────────────────────────────
+
+export type TipoPastoTemplate = 'Colazione' | 'Spuntino AM' | 'Pranzo' | 'Spuntino PM' | 'Cena';
+
+export type PastoTemplate = {
+  id: string;
+  tipo_pasto: TipoPastoTemplate;
+  nome: string;
+  descrizione: string | null;
+  proteine_g: number;
+  carboidrati_g: number;
+  grassi_g: number;
+  /** READ ONLY — generated column */
+  readonly calorie: number;
+  ordine: number;
+  attivo: boolean;
+};
+
+// ─── Ingredienti (solo in memoria nel form — non persistono su DB) ───────────
+
+export interface MacrosPer100 {
+  proteine: number;
+  carboidrati: number;
+  grassi: number;
+}
+
+export interface Ingrediente {
+  uid: string;           // ID locale temporaneo
+  nome: string;
+  brand: string;
+  grammi: number;
+  per100: MacrosPer100;
+}
+
+export interface MacroTotali {
+  proteine_g: number;
+  carboidrati_g: number;
+  grassi_g: number;
+  kcal: number;
+}
+
+/** Risultato ricerca Open Food Facts */
+export interface FoodSearchResult {
+  id: string;
+  nome: string;
+  brand: string;
+  per100: MacrosPer100;
 }
 
 // ─── Stato UI ─────────────────────────────────────────────────────────────────

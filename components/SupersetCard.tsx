@@ -2,7 +2,10 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import EsercizioCard from './EsercizioCard';
+import SwipeableCard from './SwipeableCard';
+import type { EsercizioLog, UUID } from '../types/index';
 import type { GruppoEsercizi } from '../hooks/useSessione';
+import type { LastCarichi } from '../store/lastSessionStore';
 
 // Palette colori per superset multipli
 const SUPERSET_COLORS = [
@@ -18,10 +21,13 @@ const SUPERSET_COLORS = [
 interface Props {
   gruppo: GruppoEsercizi;
   indice: number;
+  lastCarichi?: LastCarichi;
   onUpdateCarico: (id: string, caricoA: number, caricoB: number) => Promise<void>;
+  onDeleteEsercizio: (id: UUID) => Promise<void>;
+  onDuplicaEsercizio: (esercizio: EsercizioLog) => Promise<void>;
 }
 
-export default function SupersetCard({ gruppo, indice, onUpdateCarico }: Props): React.JSX.Element {
+export default function SupersetCard({ gruppo, indice, lastCarichi, onUpdateCarico, onDeleteEsercizio, onDuplicaEsercizio }: Props): React.JSX.Element {
   const accent = SUPERSET_COLORS[indice % SUPERSET_COLORS.length] ?? '#4A6741';
   const isSuperset = gruppo.tipo === 'superset';
 
@@ -51,11 +57,20 @@ export default function SupersetCard({ gruppo, indice, onUpdateCarico }: Props):
       {gruppo.esercizi.map((esercizio, idx) => (
         <React.Fragment key={esercizio.id}>
           {idx > 0 && <View style={styles.esercizioSeparatore} />}
-          <EsercizioCard
-            esercizio={esercizio}
-            accentColor={accent}
-            onUpdateCarico={onUpdateCarico}
-          />
+          <SwipeableCard
+            onDelete={() => onDeleteEsercizio(esercizio.id)}
+            onDuplicate={() => onDuplicaEsercizio(esercizio)}
+            deleteLabel="Rimuovi"
+            duplicateLabel="Duplica"
+            confirmDelete={true}
+          >
+            <EsercizioCard
+              esercizio={esercizio}
+              accentColor={accent}
+              previousCarico={lastCarichi?.[esercizio.nome_esercizio]}
+              onUpdateCarico={onUpdateCarico}
+            />
+          </SwipeableCard>
         </React.Fragment>
       ))}
     </View>

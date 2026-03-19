@@ -1,12 +1,18 @@
-// Card singolo esercizio con input carichi e volume live
+// Card singolo esercizio con input carichi, volume live e indicatori delta
 import React, { useState, useCallback } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { volumeEsercizio } from '../lib/calcoli';
 import type { EsercizioLog } from '../types/index';
 
+interface PreviousCarico {
+  carico_a_kg: number;
+  carico_b_kg: number;
+}
+
 interface Props {
   esercizio: EsercizioLog;
   accentColor?: string;
+  previousCarico?: PreviousCarico;
   onUpdateCarico: (id: string, caricoA: number, caricoB: number) => Promise<void>;
 }
 
@@ -15,9 +21,25 @@ function parseKg(s: string): number {
   return isNaN(n) || n < 0 ? 0 : n;
 }
 
+function formatKg(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function getDeltaIndicator(
+  current: number,
+  previous: number | undefined
+): { text: string; color: string } | null {
+  if (previous === undefined) return null;
+  const delta = current - previous;
+  if (delta === 0) return { text: `← ${formatKg(previous)}kg`, color: '#94a3b8' };
+  if (delta > 0) return { text: `↑ +${formatKg(delta)}kg`, color: '#10b981' };
+  return { text: `↓ ${formatKg(delta)}kg`, color: '#f59e0b' };
+}
+
 export default function EsercizioCard({
   esercizio,
   accentColor = '#4A6741',
+  previousCarico,
   onUpdateCarico,
 }: Props): React.JSX.Element {
   const [caricoA, setCaricoA] = useState(
@@ -37,6 +59,9 @@ export default function EsercizioCard({
   const handleBlur = useCallback(() => {
     void onUpdateCarico(esercizio.id, parseKg(caricoA), parseKg(caricoB));
   }, [esercizio.id, caricoA, caricoB, onUpdateCarico]);
+
+  const deltaA = getDeltaIndicator(parseKg(caricoA), previousCarico?.carico_a_kg);
+  const deltaB = getDeltaIndicator(parseKg(caricoB), previousCarico?.carico_b_kg);
 
   return (
     <View style={styles.card}>
@@ -58,6 +83,7 @@ export default function EsercizioCard({
           onChange={setCaricoA}
           onBlur={handleBlur}
           accentColor={accentColor}
+          deltaInfo={deltaA}
         />
         <CaricoInput
           label="Kg B"
@@ -65,6 +91,7 @@ export default function EsercizioCard({
           onChange={setCaricoB}
           onBlur={handleBlur}
           accentColor={accentColor}
+          deltaInfo={deltaB}
         />
         <View style={styles.volumeBox}>
           <Text style={styles.volumeLabel}>Vol.</Text>
@@ -86,9 +113,10 @@ interface CaricoInputProps {
   onChange: (v: string) => void;
   onBlur: () => void;
   accentColor: string;
+  deltaInfo?: { text: string; color: string } | null;
 }
 
-function CaricoInput({ label, valore, onChange, onBlur, accentColor }: CaricoInputProps): React.JSX.Element {
+function CaricoInput({ label, valore, onChange, onBlur, accentColor, deltaInfo }: CaricoInputProps): React.JSX.Element {
   return (
     <View style={styles.caricoBox}>
       <Text style={[styles.caricoLabel, { color: accentColor }]}>{label}</Text>
@@ -102,6 +130,11 @@ function CaricoInput({ label, valore, onChange, onBlur, accentColor }: CaricoInp
         keyboardType="decimal-pad"
         returnKeyType="done"
       />
+      {deltaInfo != null && (
+        <Text style={[styles.deltaLabel, { color: deltaInfo.color }]}>
+          {deltaInfo.text}
+        </Text>
+      )}
     </View>
   );
 }
@@ -134,7 +167,7 @@ const styles = StyleSheet.create({
   rigaCarichi: {
     flexDirection: 'row',
     gap: 8,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   caricoBox: {
     flex: 1,
@@ -158,6 +191,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     width: '100%',
     padding: 0,
+  },
+  deltaLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   volumeBox: {
     alignItems: 'center',

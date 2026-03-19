@@ -8,24 +8,27 @@ import type { Pasto, TipoPasto } from '../types/index';
 interface Props {
   pasto: Pasto;
   onElimina: (id: string) => Promise<void>;
+  onModifica: (pasto: Pasto) => void;
 }
 
-const TIPO_EMOJI: Record<TipoPasto, string> = {
-  colazione: '☀️',
+const mealIcons: Record<TipoPasto, string> = {
+  colazione: '☕',
   spuntino_1_am: '🍎',
-  spuntino_2_am: '🥜',
-  pranzo: '🍽️',
-  spuntino_3_pm: '🥝',
-  cena: '🌙',
+  spuntino_2_am: '🍌',
+  pranzo: '🍝',
+  spuntino_3_pm: '🥪',
+  cena: '🥩',
+  Extra: '✨',
 };
 
-const TIPO_LABEL: Record<TipoPasto, string> = {
+const mealNames: Record<TipoPasto, string> = {
   colazione: 'Colazione',
   spuntino_1_am: 'Spuntino AM',
-  spuntino_2_am: 'Spuntino AM 2',
+  spuntino_2_am: 'Spuntino AM (2)',
   pranzo: 'Pranzo',
   spuntino_3_pm: 'Spuntino PM',
   cena: 'Cena',
+  Extra: 'Extra',
 };
 
 const PORZIONE_LABEL: Record<string, string> = {
@@ -34,7 +37,7 @@ const PORZIONE_LABEL: Record<string, string> = {
   non_rispettato: '❌',
 };
 
-export default function PastoCard({ pasto, onElimina }: Props): React.JSX.Element {
+export default function PastoCard({ pasto, onElimina, onModifica }: Props): React.JSX.Element {
   const [eliminando, setEliminando] = useState(false);
 
   const kcal = caloriePasto(pasto.proteine_g, pasto.carboidrati_g, pasto.grassi_g);
@@ -42,7 +45,7 @@ export default function PastoCard({ pasto, onElimina }: Props): React.JSX.Elemen
   const handleElimina = (): void => {
     Alert.alert(
       'Elimina pasto',
-      `Elimina ${TIPO_LABEL[pasto.tipo_pasto]}${pasto.nome ? ` — ${pasto.nome}` : ''}?`,
+      `Elimina ${mealNames[pasto.tipo_pasto]}${pasto.nome ? ` — ${pasto.nome}` : ''}?`,
       [
         { text: 'Annulla', style: 'cancel' },
         {
@@ -61,9 +64,11 @@ export default function PastoCard({ pasto, onElimina }: Props): React.JSX.Elemen
     <View style={styles.card}>
       {/* Riga superiore: emoji tipo + nome + delete */}
       <View style={styles.rigaTop}>
-        <Text style={styles.emoji}>{TIPO_EMOJI[pasto.tipo_pasto]}</Text>
+        <Text style={styles.emoji}>{mealIcons[pasto.tipo_pasto]}</Text>
         <View style={styles.info}>
-          <Text style={styles.tipo}>{TIPO_LABEL[pasto.tipo_pasto]}</Text>
+          <Text style={[styles.tipo, pasto.tipo_pasto === 'Extra' && { color: '#8A2BE2' }]}>
+            {mealNames[pasto.tipo_pasto]}
+          </Text>
           {pasto.nome !== null && pasto.nome !== '' && (
             <Text style={styles.nome} numberOfLines={1}>
               {pasto.nome}
@@ -75,6 +80,12 @@ export default function PastoCard({ pasto, onElimina }: Props): React.JSX.Elemen
             <Text style={styles.porzioneIcon}>{PORZIONE_LABEL[pasto.porzione]}</Text>
           )}
           {pasto.omega3 && <Text style={styles.omega3Icon}>🐟</Text>}
+          <TouchableOpacity
+            onPress={() => onModifica(pasto)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="create-outline" size={18} color="#4A9EDB" />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={handleElimina}
             disabled={eliminando}

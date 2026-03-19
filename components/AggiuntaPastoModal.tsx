@@ -13,8 +13,13 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { caloriePasto } from '../lib/calcoli';
-import type { PastoFormData, PastoInsert, TipoPasto, Porzione } from '../types/index';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { caloriePasto, sommaIngredienti } from '../lib/calcoli';
+import FoodSearchInput from './FoodSearchInput';
+import { useTemplates } from '../hooks/useTemplates';
+import RecentPastiList from './RecentPastiList';
+import { useRecentPastiStore, type RecentPasto } from '../store/recentPastiStore';
+import type { Pasto, PastoFormData, PastoInsert, TipoPasto, Porzione, Ingrediente, TipoPastoTemplate, PastoTemplate } from '../types/index';
 import { PASTO_FORM_DEFAULTS } from '../types/index';
 
 interface Props {
@@ -22,6 +27,22 @@ interface Props {
   giornoId: string;
   onChiudi: () => void;
   onSalva: (dati: PastoInsert) => Promise<void>;
+  pastoInModifica?: Pasto;
+}
+
+function pastoToFormData(pasto: Pasto): PastoFormData {
+  return {
+    tipo_pasto: pasto.tipo_pasto,
+    nome: pasto.nome ?? '',
+    proteine_g: String(pasto.proteine_g),
+    carboidrati_g: String(pasto.carboidrati_g),
+    grassi_g: String(pasto.grassi_g),
+    acqua_ml: String(pasto.acqua_ml),
+    omega3: pasto.omega3,
+    porzione: pasto.porzione,
+    fame_emotiva: pasto.fame_emotiva,
+    note: pasto.note ?? '',
+  };
 }
 
 const TIPI_PASTO: { value: TipoPasto; label: string }[] = [
@@ -32,6 +53,15 @@ const TIPI_PASTO: { value: TipoPasto; label: string }[] = [
   { value: 'spuntino_3_pm', label: '🥝 Spuntino PM' },
   { value: 'cena', label: '🌙 Cena' },
 ];
+
+/** Mappa TipoPasto app → TipoPastoTemplate DB per filtrare i template */
+const TIPO_TO_TEMPLATE: Partial<Record<TipoPasto, TipoPastoTemplate>> = {
+  colazione: 'Colazione',
+  spuntino_1_am: 'Spuntino AM',
+  pranzo: 'Pranzo',
+  spuntino_3_pm: 'Spuntino PM',
+  cena: 'Cena',
+};
 
 const PORZIONI: { value: Porzione; label: string }[] = [
   { value: 'pesato', label: '⚖️ Pesato' },
@@ -49,34 +79,83 @@ export default function AggiuntaPastoModal({
   giornoId,
   onChiudi,
   onSalva,
+  pastoInModifica,
 }: Props): React.JSX.Element {
-  const [form, setForm] = useState<PastoFormData>({ ...PASTO_FORM_DEFAULTS });
+  const insets = useSafeAreaInsets();
+  const [form, setForm] = useState<PastoFormData>(
+    pastoInModifica ? pastoToFormData(pastoInModifica) : { ...PASTO_FORM_DEFAULTS }
+  );
+  const [ingredienti, setIngredienti] = useState<Ingrediente[]>([]);
   const [salvando, setSalvando] = useState(false);
+  const [templateSelezionato, setTemplateSelezionato] = useState<string | null>(null);
+  const { getTemplatesByTipo } = useTemplates();
+  const { getRecentByTipo, addRecent } = useRecentPastiStore();
+
+  // Template disponibili per il tipo_pasto corrente
+  const tipoTemplate = TIPO_TO_TEMPLATE[form.tipo_pasto];
+  const templateDisponibili = tipoTemplate ? getTemplatesByTipo(tipoTemplate) : [];
+  const recentiPerTipo = getRecentByTipo(form.tipo_pasto);
+  const templateAttivo = templateDisponibili.find(t => t.id === templateSelezionato) ?? null;
 
   const aggiorna = useCallback(
     <K extends keyof PastoFormData>(chiave: K, valore: PastoFormData[K]) => {
       setForm((prev) => ({ ...prev, [chiave]: valore }));
+      // De-seleziona template se l'utente modifica macro o cambia tipo_pasto
+      if (['proteine_g', 'carboidrati_g', 'grassi_g', 'tipo_pasto'].includes(chiave as string)) {
+        setTemplateSelezionato(null);
+      }
     },
     []
   );
 
-  // kcal live calcolate mentre digiti
-  const kcalLive = caloriePasto(
-    parseNum(form.proteine_g),
-    parseNum(form.carboidrati_g),
-    parseNum(form.grassi_g)
-  );
+  const selezionaTemplate = useCallback((template: PastoTemplate) => {
+    setTemplateSelezionato(template.id);
+    setForm(prev => ({
+      ...prev,
+      nome: template.nome,
+      proteine_g: String(template.proteine_g),
+      carboidrati_g: String(template.carboidrati_g),
+      grassi_g: String(template.grassi_g),
+    }));
+    // Svuota ingredienti se c'erano — i template precompilano i macro manuali
+    setIngredienti([]);
+  }, []);
+
+  const selezionaRecente = useCallback((recente: RecentPasto) => {
+    setTemplateSelezionato(null);
+    setIngredienti([]);
+    setForm(prev => ({
+      ...prev,
+      nome: recente.nome ?? '',
+      proteine_g: String(recente.proteine_g),
+      carboidrati_g: String(recente.carboidrati_g),
+      grassi_g: String(recente.grassi_g),
+      acqua_ml: String(recente.acqua_ml),
+      omega3: recente.omega3,
+      porzione: recente.porzione ?? prev.porzione,
+    }));
+  }, []);
+
+  // kcal live: se ci sono ingredienti usa quelli, altrimenti i macro manuali
+  const totaliIng = sommaIngredienti(ingredienti);
+  const kcalLive =
+    ingredienti.length > 0
+      ? totaliIng.kcal
+      : caloriePasto(parseNum(form.proteine_g), parseNum(form.carboidrati_g), parseNum(form.grassi_g));
 
   const handleSalva = async (): Promise<void> => {
     setSalvando(true);
     try {
+      // Se ci sono ingredienti usa i totali da quelli, altrimenti i macro manuali
+      const usaIngredienti = ingredienti.length > 0;
       const dati: PastoInsert = {
         giorno_id: giornoId,
         tipo_pasto: form.tipo_pasto,
         nome: form.nome.trim() !== '' ? form.nome.trim() : undefined,
-        proteine_g: parseNum(form.proteine_g),
-        carboidrati_g: parseNum(form.carboidrati_g),
-        grassi_g: parseNum(form.grassi_g),
+        proteine_g: usaIngredienti ? totaliIng.proteine_g : parseNum(form.proteine_g),
+        carboidrati_g: usaIngredienti ? totaliIng.carboidrati_g : parseNum(form.carboidrati_g),
+        grassi_g: usaIngredienti ? totaliIng.grassi_g : parseNum(form.grassi_g),
+        // ← MAI includere calorie_pasto (GENERATED COLUMN)
         acqua_ml: parseNum(form.acqua_ml),
         omega3: form.omega3,
         porzione: form.porzione,
@@ -84,7 +163,20 @@ export default function AggiuntaPastoModal({
         note: form.note.trim() !== '' ? form.note.trim() : undefined,
       };
       await onSalva(dati);
-      setForm({ ...PASTO_FORM_DEFAULTS }); // reset
+      // Aggiorna i recenti con il pasto appena salvato
+      addRecent({
+        tipo_pasto: dati.tipo_pasto,
+        nome: dati.nome ?? null,
+        proteine_g: dati.proteine_g,
+        carboidrati_g: dati.carboidrati_g,
+        grassi_g: dati.grassi_g,
+        acqua_ml: dati.acqua_ml ?? 0,
+        omega3: dati.omega3 ?? false,
+        porzione: dati.porzione ?? null,
+      });
+      setForm({ ...PASTO_FORM_DEFAULTS });
+      setIngredienti([]);
+      setTemplateSelezionato(null);
       onChiudi();
     } catch {
       // errore gestito in usePasti
@@ -95,6 +187,8 @@ export default function AggiuntaPastoModal({
 
   const handleChiudi = (): void => {
     setForm({ ...PASTO_FORM_DEFAULTS });
+    setIngredienti([]);
+    setTemplateSelezionato(null);
     onChiudi();
   };
 
@@ -110,11 +204,11 @@ export default function AggiuntaPastoModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
           <TouchableOpacity onPress={handleChiudi} style={styles.btnChiudi}>
             <Text style={styles.btnChiudiTesto}>Annulla</Text>
           </TouchableOpacity>
-          <Text style={styles.titolo}>Aggiungi Pasto</Text>
+          <Text style={styles.titolo}>{pastoInModifica ? 'Modifica Pasto' : 'Aggiungi Pasto'}</Text>
           <TouchableOpacity
             onPress={() => void handleSalva()}
             disabled={salvando}
@@ -154,6 +248,53 @@ export default function AggiuntaPastoModal({
             </View>
           </Section>
 
+          {/* Pasti recenti */}
+          {recentiPerTipo.length > 0 && (
+            <Section titolo="">
+              <RecentPastiList
+                tipoPasto={form.tipo_pasto}
+                recenti={recentiPerTipo}
+                onSelect={selezionaRecente}
+              />
+            </Section>
+          )}
+
+          {/* Template Laudisio */}
+          {templateDisponibili.length > 0 && (
+            <Section titolo="Piano Laudisio">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateScroll}>
+                <View style={styles.templateRiga}>
+                  {templateDisponibili.map((t) => (
+                    <TouchableOpacity
+                      key={t.id}
+                      style={[
+                        styles.templateChip,
+                        templateSelezionato === t.id && styles.templateChipAttivo,
+                      ]}
+                      onPress={() => selezionaTemplate(t)}
+                    >
+                      <Text
+                        style={[
+                          styles.templateChipTesto,
+                          templateSelezionato === t.id && styles.templateChipTestoAttivo,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {t.nome}
+                      </Text>
+                      <Text style={styles.templateChipKcal}>
+                        {Math.round(t.proteine_g * 4 + t.carboidrati_g * 4 + t.grassi_g * 9)} kcal
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+              {templateAttivo?.descrizione && (
+                <Text style={styles.templateHint}>{templateAttivo.descrizione}</Text>
+              )}
+            </Section>
+          )}
+
           {/* Nome (opzionale) */}
           <Section titolo="Nome / Descrizione (opzionale)">
             <TextInput
@@ -166,8 +307,13 @@ export default function AggiuntaPastoModal({
             />
           </Section>
 
-          {/* Macronutrienti + kcal live */}
-          <Section titolo={`Macronutrienti  —  ${Math.round(kcalLive)} kcal`}>
+          {/* Ricerca ingredienti */}
+          <Section titolo="Ingredienti (ricerca Open Food Facts)">
+            <FoodSearchInput ingredienti={ingredienti} onChange={setIngredienti} />
+          </Section>
+
+          {/* Macronutrienti manuali (fallback se nessun ingrediente) */}
+          <Section titolo={`Macronutrienti${ingredienti.length > 0 ? ' (da ingredienti)' : ''}  —  ${Math.round(kcalLive)} kcal`}>
             <View style={styles.macroRiga}>
               <MacroInput
                 label="Proteine"
@@ -333,7 +479,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#333333',
     backgroundColor: '#242424',
@@ -415,4 +561,30 @@ const styles = StyleSheet.create({
     borderColor: '#333333',
   },
   toggleLabel: { fontSize: 15, color: '#CCCCCC' },
+  // Template chip
+  templateScroll: { marginHorizontal: -4 },
+  templateRiga: { flexDirection: 'row', gap: 8, paddingHorizontal: 4 },
+  templateChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#2A2A2A',
+    borderWidth: 1,
+    borderColor: '#333333',
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  templateChipAttivo: {
+    backgroundColor: '#4A6741',
+    borderColor: '#5A7F51',
+  },
+  templateChipTesto: { fontSize: 13, color: '#CCCCCC', fontWeight: '600' },
+  templateChipTestoAttivo: { color: '#FFFFFF' },
+  templateChipKcal: { fontSize: 11, color: '#666666', marginTop: 2 },
+  templateHint: {
+    fontSize: 12,
+    color: '#888888',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
 });

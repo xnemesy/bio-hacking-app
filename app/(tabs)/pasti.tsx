@@ -1,5 +1,5 @@
 // Schermata pasti: log nutrizionale con CRUD completo
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import PastoCard from '../../components/PastoCard';
+import SwipeableCard from '../../components/SwipeableCard';
 import AggiuntaPastoModal from '../../components/AggiuntaPastoModal';
 import { useGiorno } from '../../hooks/useGiorno';
 import { usePasti } from '../../hooks/usePasti';
 import { caloriePasto } from '../../lib/calcoli';
-import type { Pasto, TipoPasto } from '../../types/index';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, { FadeIn, FadeOut, withRepeat, withSequence, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import type { Pasto, PastoInsert, TipoPasto } from '../../types/index';
 
 // ─── Ordine e raggruppamento ──────────────────────────────────────────────────
 
@@ -27,6 +30,7 @@ const ORDINE_TIPI: TipoPasto[] = [
   'pranzo',
   'spuntino_3_pm',
   'cena',
+  'Extra',
 ];
 
 const TIPO_LABEL: Record<TipoPasto, string> = {
@@ -36,6 +40,7 @@ const TIPO_LABEL: Record<TipoPasto, string> = {
   pranzo: '🍽️ Pranzo',
   spuntino_3_pm: '🥝 Spuntino PM',
   cena: '🌙 Cena',
+  Extra: '✨ Extra',
 };
 
 interface Sezione {
@@ -59,22 +64,71 @@ function raggruppa(pasti: Pasto[]): Sezione[] {
 
 export default function PastiScreen(): React.JSX.Element {
   const [modalVisibile, setModalVisibile] = useState(false);
+  const [pastoInModifica, setPastoInModifica] = useState<Pasto | null>(null);
+  const [mostraHint, setMostraHint] = useState(false);
+  const glowAnim = useSharedValue(0);
 
   // useGiorno per ottenere l'id del giorno corrente
   const { giorno, loading: loadingGiorno, aggiorna: aggiornaGiorno } = useGiorno();
 
   // usePasti per il CRUD
-  const { pasti, totali, loading: loadingPasti, salvando, error, aggiorna, aggiungiPasto, eliminaPasto } =
+  const { pasti, totali, loading: loadingPasti, salvando, error, aggiorna, aggiungiPasto, modificaPasto, eliminaPasto, duplicaPasto } =
     usePasti(giorno?.id ?? null);
 
-  // Ricarica quando il tab diventa attivo
+  // Estrai il solo ID (stringa primitiva) — stessa correzione di allenamento.tsx
+  // `giorno` (oggetto) come dep causa loop infinito: ogni aggiornaGiorno()
+  // crea una nuova reference → useCallback ricrea → useFocusEffect ri-esegue → loop.
+  const giornoId = giorno?.id;
+
   useFocusEffect(
-    React.useCallback(() => {
-      void aggiornaGiorno().then(() => {
-        if (giorno) void aggiorna();
-      });
-    }, [aggiornaGiorno, aggiorna, giorno])
+    useCallback(() => {
+      void aggiornaGiorno();
+      if (giornoId) void aggiorna();
+
+      // Controlla se mostrare l'hint
+      void (async () => {
+        const shown = await AsyncStorage.getItem('swipe_hint_shown');
+        if (!shown) {
+          setMostraHint(true);
+          glowAnim.value = withRepeat(
+            withSequence(withTiming(1, { duration: 1000 }), withTiming(0, { duration: 1000 })),
+            3,
+            true
+          );
+          setTimeout(nascondiHint, 5000);
+        }
+      })();
+    }, [aggiornaGiorno, aggiorna, giornoId, glowAnim])
   );
+
+  const nascondiHint = useCallback(async () => {
+    setMostraHint(false);
+    await AsyncStorage.setItem('swipe_hint_shown', 'true');
+  }, []);
+
+  // Sicurezza: carica i pasti anche se il tab era già in focus quando giorno si è caricato
+  useEffect(() => {
+    if (giornoId) void aggiorna();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [giornoId]); // aggiorna è stabile (useCallback con [giornoId])
+
+  const handleApriModifica = useCallback((pasto: Pasto) => {
+    setPastoInModifica(pasto);
+    setModalVisibile(true);
+  }, []);
+
+  const handleChiudiModal = useCallback(() => {
+    setModalVisibile(false);
+    setPastoInModifica(null);
+  }, []);
+
+  const handleSalva = useCallback(async (dati: PastoInsert) => {
+    if (pastoInModifica) {
+      await modificaPasto(pastoInModifica.id, dati);
+    } else {
+      await aggiungiPasto(dati);
+    }
+  }, [pastoInModifica, modificaPasto, aggiungiPasto]);
 
   const sezioni = raggruppa(pasti);
   const loading = loadingGiorno || loadingPasti;
@@ -109,9 +163,32 @@ export default function PastiScreen(): React.JSX.Element {
           sections={sezioni}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.lista}
-          renderItem={({ item }) => (
-            <PastoCard pasto={item} onElimina={eliminaPasto} />
-          )}
+          renderItem={({ item, index, section }) => {
+            const isFirst = section === sezioni[0] && index === 0;
+            return (
+              <View style={isFirst && mostraHint && styles.firstCardContainer}>
+                <SwipeableCard
+                  onDelete={() => {
+                    eliminaPasto(item.id);
+                    if (mostraHint) nascondiHint();
+                  }}
+                  onDuplicate={() => {
+                    duplicaPasto(item);
+                    if (mostraHint) nascondiHint();
+                  }}
+                  confirmDelete={true}
+                >
+                  <PastoCard pasto={item} onElimina={eliminaPasto} onModifica={handleApriModifica} />
+                </SwipeableCard>
+                {isFirst && mostraHint && (
+                  <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.hintTooltip}>
+                    <Ionicons name="swap-horizontal" size={16} color="#FFF" />
+                    <Text style={styles.hintText}>Scorri a SX per eliminare, a DX per duplicare</Text>
+                  </Animated.View>
+                )}
+              </View>
+            );
+          }}
           renderSectionHeader={({ section }) => (
             <View style={styles.sezioneHeader}>
               <Text style={styles.sezioneTitolo}>{section.title}</Text>
@@ -139,7 +216,7 @@ export default function PastiScreen(): React.JSX.Element {
       {/* FAB */}
       <TouchableOpacity
         style={[styles.fab, salvando && styles.fabDisabilitato]}
-        onPress={() => setModalVisibile(true)}
+        onPress={() => { setPastoInModifica(null); setModalVisibile(true); }}
         disabled={salvando || !giorno}
         activeOpacity={0.8}
       >
@@ -150,13 +227,15 @@ export default function PastiScreen(): React.JSX.Element {
         )}
       </TouchableOpacity>
 
-      {/* Modal aggiunta */}
+      {/* Modal aggiunta / modifica — key forza re-mount al cambio pasto */}
       {giorno !== null && (
         <AggiuntaPastoModal
+          key={pastoInModifica?.id ?? 'new'}
           visibile={modalVisibile}
           giornoId={giorno.id}
-          onChiudi={() => setModalVisibile(false)}
-          onSalva={aggiungiPasto}
+          onChiudi={handleChiudiModal}
+          onSalva={handleSalva}
+          pastoInModifica={pastoInModifica ?? undefined}
         />
       )}
     </SafeAreaView>
@@ -250,4 +329,30 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   fabDisabilitato: { backgroundColor: '#333333' },
+  firstCardContainer: {
+    zIndex: 10,
+  },
+  hintTooltip: {
+    position: 'absolute',
+    top: -40,
+    left: '10%',
+    right: '10%',
+    backgroundColor: '#3A6EA5',
+    padding: 8,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  hintText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });

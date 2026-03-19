@@ -1,0 +1,41 @@
+app/(tabs)/allenamento.tsx(121,47): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string | null'.
+  Type 'undefined' is not assignable to type 'string | null'.
+components/QuickAddPastoSheet.tsx(14,27): error TS2307: Cannot find module 'expo-router' or its corresponding type declarations.
+components/QuickAddPastoSheet.tsx(94,11): error TS2322: Type 'Porzione | null' is not assignable to type 'Porzione | undefined'.
+  Type 'null' is not assignable to type 'Porzione | undefined'.
+components/QuickAddPastoSheet.tsx(151,9): error TS2322: Type 'Porzione | null' is not assignable to type 'Porzione | undefined'.
+  Type 'null' is not assignable to type 'Porzione | undefined'.
+hooks/useGiorno.ts(88,9): error TS2739: Type '{}' is missing the following properties from type 'Giorno': id, data, note, created_at
+hooks/useGiorno.ts(97,9): error TS2739: Type '{}' is missing the following properties from type 'Giorno': id, data, note, created_at
+hooks/useGiorno.ts(121,16): error TS2345: Argument of type '{}[]' is not assignable to parameter of type 'SetStateAction<Pasto[]>'.
+  Type '{}[]' is not assignable to type 'Pasto[]'.
+    Type '{}' is missing the following properties from type 'Pasto': id, giorno_id, tipo_pasto, nome, and 10 more.
+hooks/useGiorno.ts(122,19): error TS2345: Argument of type '{} | null' is not assignable to parameter of type 'SetStateAction<Sessione | null>'.
+  Type '{}' is not assignable to type 'SetStateAction<Sessione | null>'.
+hooks/useGiorno.ts(123,31): error TS2345: Argument of type '{}[]' is not assignable to parameter of type 'Pasto[]'.
+  Type '{}' is missing the following properties from type 'Pasto': id, giorno_id, tipo_pasto, nome, and 10 more.
+hooks/useLastSession.ts(52,23): error TS2339: Property 'giorni' does not exist on type 'never'.
+hooks/useLastSession.ts(53,40): error TS18048: 'oggi' is possibly 'undefined'.
+hooks/useLastSession.ts(65,39): error TS2339: Property 'id' does not exist on type 'never'.
+hooks/useLastSession.ts(80,38): error TS2339: Property 'giorni' does not exist on type 'never'.
+hooks/usePasti.ts(61,16): error TS2345: Argument of type '{}[]' is not assignable to parameter of type 'SetStateAction<Pasto[]>'.
+  Type '{}[]' is not assignable to type 'Pasto[]'.
+    Type '{}' is missing the following properties from type 'Pasto': id, giorno_id, tipo_pasto, nome, and 10 more.
+hooks/usePasti.ts(62,31): error TS2345: Argument of type '{}[]' is not assignable to parameter of type 'Pasto[]'.
+  Type '{}' is missing the following properties from type 'Pasto': id, giorno_id, tipo_pasto, nome, and 10 more.
+hooks/useProfilo.ts(35,18): error TS2345: Argument of type '{} | null' is not assignable to parameter of type 'Profilo | null'.
+  Type '{}' is missing the following properties from type 'Profilo': id, user_id, nome, peso_kg, and 10 more.
+hooks/useProfilo.ts(56,18): error TS2345: Argument of type '{}' is not assignable to parameter of type 'Profilo'.
+  Type '{}' is missing the following properties from type 'Profilo': id, user_id, nome, peso_kg, and 10 more.
+hooks/useSessione.ts(96,19): error TS2345: Argument of type '{} | null' is not assignable to parameter of type 'SetStateAction<Sessione | null>'.
+  Type '{}' is not assignable to type 'SetStateAction<Sessione | null>'.
+hooks/useSessione.ts(102,47): error TS2339: Property 'id' does not exist on type '{}'.
+hooks/useSessione.ts(105,21): error TS2345: Argument of type '{}[]' is not assignable to parameter of type 'SetStateAction<EsercizioLog[]>'.
+  Type '{}[]' is not assignable to type 'EsercizioLog[]'.
+    Type '{}' is missing the following properties from type 'EsercizioLog': id, sessione_id, nome_esercizio, serie, and 8 more.
+hooks/useSessione.ts(139,21): error TS2345: Argument of type '{}' is not assignable to parameter of type 'SetStateAction<Sessione | null>'.
+hooks/useSessione.ts(155,42): error TS2339: Property 'id' does not exist on type '{}'.
+hooks/useSessione.ts(173,21): error TS2345: Argument of type '{}[]' is not assignable to parameter of type 'SetStateAction<EsercizioLog[]>'.
+  Type '{}[]' is not assignable to type 'EsercizioLog[]'.
+    Type '{}' is missing the following properties from type 'EsercizioLog': id, sessione_id, nome_esercizio, serie, and 8 more.
+test_schema.ts(2,32): error TS2307: Cannot find module '@supabase/postgrest-js/dist/module/select-query-parser' or its corresponding type declarations.

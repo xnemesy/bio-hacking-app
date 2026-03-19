@@ -1,0 +1,2 @@
+test_schema.ts(26,7): error TS2322: Type 'true' is not assignable to type 'false'.
+test_schema.ts(28,7): error TS2322: Type 'true' is not assignable to type 'false'.

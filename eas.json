@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 10.0.0"
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -23,16 +24,28 @@
       }
     },
     "production": {
-      "distribution": "store",
       "ios": {
-        "simulator": false
+        "autoIncrement": true
       },
       "android": {
+        "autoIncrement": true,
         "buildType": "app-bundle"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6760619559",
+        "appleTeamId": "ZLART575Y4",
+        "ascApiKeyPath": "./AuthKey_DF8A9GW7B5.p8",
+        "ascApiKeyIssuerId": "873d52e4-5fc6-4502-9c43-213f10d070fe",
+        "ascApiKeyId": "DF8A9GW7B5"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./bio-hacking-490316-8eb0069b487c.json",
+        "track": "internal"
+      }
+    }
   }
 }

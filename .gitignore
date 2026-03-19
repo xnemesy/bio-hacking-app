@@ -32,6 +32,10 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+
+# Google Play service account key (credenziali private)
+bio-hacking-490316-8eb0069b487c.json
 
 # typescript
 *.tsbuildinfo

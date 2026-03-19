@@ -37,6 +37,7 @@ export interface UsePastiReturn {
   aggiungiPasto: (dati: PastoInsert) => Promise<void>;
   modificaPasto: (id: UUID, dati: Partial<PastoInsert>) => Promise<void>;
   eliminaPasto: (id: UUID) => Promise<void>;
+  duplicaPasto: (pasto: Pasto) => Promise<void>;
 }
 
 export function usePasti(giornoId: UUID | null): UsePastiReturn {
@@ -57,7 +58,7 @@ export function usePasti(giornoId: UUID | null): UsePastiReturn {
         .eq('giorno_id', giornoId)
         .order('created_at');
       if (err) throw new Error(err.message);
-      const lista = data ?? [];
+      const lista = (data as Pasto[]) ?? [];
       setPasti(lista);
       setTotali(calcolaTotali(lista));
     } catch (e) {
@@ -124,5 +125,30 @@ export function usePasti(giornoId: UUID | null): UsePastiReturn {
     []
   );
 
-  return { pasti, totali, loading, salvando, error, aggiorna, aggiungiPasto, modificaPasto, eliminaPasto };
+  const duplicaPasto = useCallback(
+    async (pasto: Pasto) => {
+      if (!giornoId) return;
+      setSalvando(true);
+      setError(null);
+      try {
+        const { id, created_at, calorie_pasto, ...rest } = pasto;
+        const dati: PastoInsert = {
+          ...rest,
+          giorno_id: giornoId,
+          note: pasto.note ? `[Duplicato] ${pasto.note}` : '[Duplicato]',
+        };
+        const { error: err } = await supabase.from('pasti').insert(dati);
+        if (err) throw new Error(err.message);
+        await aggiorna();
+      } catch (e) {
+        setError((e as Error).message);
+        throw e;
+      } finally {
+        setSalvando(false);
+      }
+    },
+    [giornoId, aggiorna]
+  );
+
+  return { pasti, totali, loading, salvando, error, aggiorna, aggiungiPasto, modificaPasto, eliminaPasto, duplicaPasto };
 }
